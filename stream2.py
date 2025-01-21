@@ -6,7 +6,7 @@ import os
 import signal
 import time
 
-SERVER_URL = "ws://localhost:8080"
+SERVER_URL = "ws://192.168.50.6:8080"
 AUTH_TOKEN = "secret"
 STREAM_URL = "rtmp://15.156.160.96/live/eric"
 CAMERA_COMMAND = f"rpicam-vid -n -o - -t 0 --vflip | ffmpeg -re -f h264 -i - -vcodec copy -f flv {STREAM_URL}"

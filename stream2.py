@@ -6,7 +6,7 @@ import os
 import signal
 import time
 
-SERVER_URL = "ws://192.168.50.6:8080"
+SERVER_URL = "ws://127.0.0.1:8080/ws"
 AUTH_TOKEN = "secret"
 STREAM_URL = "rtmp://15.156.160.96/live/eric"
 CAMERA_COMMAND = f"rpicam-vid -n -o - -t 0 --vflip | ffmpeg -re -f h264 -i - -vcodec copy -f flv {STREAM_URL}"
@@ -60,7 +60,7 @@ async def connect_to_server():
     global streaming_process
     
     headers = {
-        "Authorization": AUTH_TOKEN
+        "Authorization": f"Bearer {AUTH_TOKEN}"
     }
 
     while True:
@@ -68,7 +68,7 @@ async def connect_to_server():
             print("Attempting to connect to the server...")
             async with websockets.connect(SERVER_URL, additional_headers=headers) as websocket:
                 print("Connected to the server.")
-                #await authenticate(websocket)
+                await authenticate(websocket)
                 await handle_server_messages(websocket)
         except (websockets.ConnectionClosed, ConnectionRefusedError) as e:
             print(f"Connection error: {e}. Retrying in 5 seconds...")

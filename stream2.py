@@ -6,7 +6,7 @@ import os
 import signal
 import time
 
-SERVER_URL = "ws://127.0.0.1:8080/ws"
+SERVER_URL = "ws://192.168.50.6:8080/ws"
 AUTH_TOKEN = "secret"
 STREAM_URL = "rtmp://15.156.160.96/live/eric"
 CAMERA_COMMAND = f"rpicam-vid -n -o - -t 0 --vflip | ffmpeg -re -f h264 -i - -vcodec copy -f flv {STREAM_URL}"
@@ -30,9 +30,9 @@ async def handle_server_messages(websocket):
         try:
             data = json.loads(message)
             action = data.get("action")
-            payload = data.get("payload")
+            #payload = data.get("payload")
 
-            if action == "stream" and payload:
+            if action == "start":
                 if streaming_process is None:
                     print("Starting video stream...")
                     streaming_process = subprocess.Popen(

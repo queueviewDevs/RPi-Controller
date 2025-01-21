@@ -68,7 +68,7 @@ async def connect_to_server():
             print("Attempting to connect to the server...")
             async with websockets.connect(SERVER_URL, additional_headers=headers) as websocket:
                 print("Connected to the server.")
-                await authenticate(websocket)
+                #await authenticate(websocket)
                 await handle_server_messages(websocket)
         except (websockets.ConnectionClosed, ConnectionRefusedError) as e:
             print(f"Connection error: {e}. Retrying in 5 seconds...")

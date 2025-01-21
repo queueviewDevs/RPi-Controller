@@ -58,11 +58,15 @@ async def handle_server_messages(websocket):
 async def connect_to_server():
     """Establish connection to the server and manage reconnection."""
     global streaming_process
+    
+    headers = {
+        "Authorization": AUTH_TOKEN
+    }
 
     while True:
         try:
             print("Attempting to connect to the server...")
-            async with websockets.connect(SERVER_URL) as websocket:
+            async with websockets.connect(SERVER_URL, additional_headers=headers) as websocket:
                 print("Connected to the server.")
                 await authenticate(websocket)
                 await handle_server_messages(websocket)

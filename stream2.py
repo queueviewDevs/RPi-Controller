@@ -152,8 +152,8 @@ async def main():
             
         if streaming_process:
             print("Stopping streaming process due to connection loss...")
-            # os.killpg(os.getpgid(streaming_process.pid), signal.SIGTERM)
-            # streaming_process = None
+            os.killpg(os.getpgid(streaming_process.pid), signal.SIGTERM)
+            streaming_process = None
         
         await asyncio.sleep(5)
         

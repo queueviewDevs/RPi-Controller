@@ -4,29 +4,25 @@ import json
 import subprocess
 import os
 import signal
-import time
 import requests
 import json
 
 #SERVER_URL = "ws://15.156.160.96:8080/api/cameras/connect"
-BASE_URL = "http://127.0.0.1:8000"
-WS_URL = "ws://127.0.0.1:8000/connect"
+# BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://15.156.160.96:8000"
+WS_URL = "ws://15.156.160.96:8000/connect"
 #AUTH_TOKEN = "secret"
 STREAM_URL = "rtmp://15.156.160.96/live/eric"
 CAMERA_COMMAND = f"rpicam-vid -n -o - -t 0 --vflip | ffmpeg -re -f h264 -i - -vcodec copy -f flv {STREAM_URL}"
 
 streaming_process = None
 
-
 def authenticate() -> str:
     """Authenticate the pi to the server. Returns a token used for API access"""
     
-    username = "johndoe"
-    password = "secret"
-    
     form_data = {
-        "username": username,
-        "password": password
+        "username": "ericmuzzo",
+        "password": "dirtbIke1*"
     }
     
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -162,6 +158,9 @@ async def main():
         await asyncio.sleep(5)
         
 if __name__ == "__main__":
+    
+    load_dotenv()
+    
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

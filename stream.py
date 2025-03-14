@@ -7,49 +7,58 @@ import signal
 import requests
 import json
 
+
+#--------Variables that will eventually be env vars
 #SERVER_URL = "ws://15.156.160.96:8080/api/cameras/connect"
 # BASE_URL = "http://127.0.0.1:8000"
 BASE_URL = "http://15.156.160.96:8000"
-WS_URL = "ws://15.156.160.96:8000/connect"
-#AUTH_TOKEN = "secret"
-STREAM_URL = "rtmp://15.156.160.96/live/eric"
-CAMERA_COMMAND = f"rpicam-vid -n -o - -t 0 --vflip | ffmpeg -re -f h264 -i - -vcodec copy -f flv {STREAM_URL}"
+WS_URL = "ws://15.156.160.96:8000/api/devices/connect"
+# WS_URL = "ws://127.0.0.1:8000/api/devices/connect"
+DEVICE_ID = "pi_0001"
+DESCRIPTION = "Mounted to utility mole pointing north"
+STREAM_URL = f"rtmp://15.156.160.96/live/{DEVICE_ID}"
+API_KEY = "dbe4248ce6a720c6db4302d5dc4319c5d768ca0f10f3241ec9e1628eebfa0d165a758b62d48e317c25a019da0dfdbe0e8a48166aa6ad270b2d13e51c06a8d93b"
+CAMERA_COMMAND = f"rpicam-vid -n -o - -t 0 --vflip | ffmpeg -re -f h264 -i - -vcodec copy -f flv {STREAM_URL}?api-key={API_KEY}"
+
 
 streaming_process = None
 
-def authenticate() -> str:
-    """Authenticate the pi to the server. Returns a token used for API access"""
+# def authenticate() -> str:
+#     """Authenticate the pi to the server. Returns a token used for API access"""
     
-    form_data = {
-        "username": "ericmuzzo",
-        "password": "dirtbIke1*"
-    }
+#     form_data = {
+#         "username": "ericmuzzo",
+#         "password": "dirtbIke1*"
+#     }
     
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+#     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     
-    try:
-        response = requests.post(f"{BASE_URL}/auth/login", data=form_data, headers=headers)
+#     try:
+#         response = requests.post(f"{BASE_URL}/auth/login", data=form_data, headers=headers)
         
-        if response.status_code == 401:
-            print("Authentication failed")
-            return None
+#         if response.status_code == 401:
+#             print("Authentication failed")
+#             return None
         
-        response.raise_for_status()
-        token = json.loads(response.content.decode())["access_token"]
-        return token
+#         response.raise_for_status()
+#         token = json.loads(response.content.decode())["access_token"]
+#         return token
         
-    except Exception as e:
-        print(f"Authentication error: {e}")
-        return None
+#     except Exception as e:
+#         print(f"Authentication error: {e}")
+#         return None
     
 
 
-async def connect_to_server(token):
+async def connect_to_server():
     """Establish connection to the server and manage reconnection."""
     
+    # headers = {
+    #     "Accept": "application/json",
+    #     "Authorization": f"Bearer {token}"
+    # }
     headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {token}"
+        "x-key": API_KEY
     }
 
     try:
@@ -60,11 +69,11 @@ async def connect_to_server(token):
         
         # Identify itself to the server
         identifier = {
-            "id": 1,
-            "name": "First cam",
+            "id": DEVICE_ID,
+            "name": DESCRIPTION,
             "connected": True,
             "streaming": False,
-            "liveStreamURL": "http://url.com"
+            "liveStreamURL": f"http://queueview.ca/play/{DEVICE_ID}"
         }
         await websocket.send(json.dumps(identifier))
         print("Send ID to server")
@@ -79,13 +88,12 @@ async def connect_to_server(token):
         return None
             
             
-async def handle_server_messages(websocket: websockets.ClientConnection, token):
+async def handle_server_messages(websocket: websockets.ClientConnection):
     """Handle incoming messages from the server."""
     global streaming_process
     
     headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {token}"
+        "x-key": API_KEY
     }
 
     async for message in websocket:
@@ -100,7 +108,7 @@ async def handle_server_messages(websocket: websockets.ClientConnection, token):
                     streaming_process = subprocess.Popen(
                         CAMERA_COMMAND, shell=True, stdin=subprocess.PIPE, start_new_session=True
                     )
-                    requests.put(f"{BASE_URL}/api/cameras/1", json={"streaming": True}, headers=headers)
+                    requests.put(f"{BASE_URL}/api/cameras/{DEVICE_ID}", json={"streaming": True}, headers=headers)
                 else:
                     print("Streaming is already active.")
             elif action == "stop":
@@ -109,7 +117,7 @@ async def handle_server_messages(websocket: websockets.ClientConnection, token):
                     os.killpg(os.getpgid(streaming_process.pid), signal.SIGTERM)
                     streaming_process = None
                     print(f"Streaming process: {streaming_process}")
-                    requests.put(f"{BASE_URL}/api/cameras/1", json={"streaming": False}, headers=headers)
+                    requests.put(f"{BASE_URL}/api/cameras/{DEVICE_ID}", json={"streaming": False}, headers=headers)
                 else:
                     print("No active streaming process to stop.")
                     
@@ -126,20 +134,21 @@ async def main():
     global streaming_process
     
     while True:
-        token = authenticate()
-        if not token:
-            print("Failed to obtain a token. Retrying in 10 seconds...")
-            await asyncio.sleep(5)
-            continue
+        # token = authenticate()
+        # if not token:
+        #     print("Failed to obtain a token. Retrying in 10 seconds...")
+        #     await asyncio.sleep(5)
+        #     continue
         
-        websocket = await connect_to_server(token)
+        # websocket = await connect_to_server(token)
+        websocket = await connect_to_server()
 
         if not websocket:
             await asyncio.sleep(5)
             continue
         
         try:
-            await handle_server_messages(websocket, token)
+            await handle_server_messages(websocket)
         
         except websockets.ConnectionClosed as cc:
             print(f"Websocket connection closed: {cc}")

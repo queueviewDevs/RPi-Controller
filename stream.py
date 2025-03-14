@@ -1,123 +1,165 @@
-from twisted.internet.protocol import ReconnectingClientFactory
-from autobahn.twisted.websocket import WebSocketClientProtocol, WebSocketClientFactory
+import asyncio
+import websockets
 import json
 import subprocess
 import os
 import signal
+import requests
+import json
 
-server = "15.156.160.96"
-port = 8080
+#SERVER_URL = "ws://15.156.160.96:8080/api/cameras/connect"
+# BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://15.156.160.96:8000"
+WS_URL = "ws://15.156.160.96:8000/connect"
+#AUTH_TOKEN = "secret"
+STREAM_URL = "rtmp://15.156.160.96/live/eric"
+CAMERA_COMMAND = f"rpicam-vid -n -o - -t 0 --vflip | ffmpeg -re -f h264 -i - -vcodec copy -f flv {STREAM_URL}"
 
-streamingProcess = None
+streaming_process = None
 
-
-class App:
+def authenticate() -> str:
+    """Authenticate the pi to the server. Returns a token used for API access"""
     
-    def __init__(self):
-        print("App is initialized.")
+    form_data = {
+        "username": "ericmuzzo",
+        "password": "dirtbIke1*"
+    }
+    
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    
+    try:
+        response = requests.post(f"{BASE_URL}/auth/login", data=form_data, headers=headers)
         
-    def showCamera(self, is_bool):
+        if response.status_code == 401:
+            print("Authentication failed")
+            return None
         
-        global streamingProcess
-        # print("Show the camera to the server? {0}".format(is_bool))
+        response.raise_for_status()
+        token = json.loads(response.content.decode())["access_token"]
+        return token
         
-        if is_bool:
+    except Exception as e:
+        print(f"Authentication error: {e}")
+        return None
+    
+
+
+async def connect_to_server(token):
+    """Establish connection to the server and manage reconnection."""
+    
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+
+    try:
+        print("Attempting to connect to the server...")
         
-            if streamingProcess is None:
-                #ffmpeg_cmd = f'ffmpeg -re -i video.mov -c:v libx264 -preset veryfast -maxrate 3000k -bufsize 6000k -pix_fmt yuv420p -g 50 -c:a aac -b:a 160k -ac 2 -ar 44100 -f flv rtmp://{server}/live/eric'
-     
-                
-                ffmpeg_cmd = f'rpicam-vid -n -o - -t 0 --vflip | ffmpeg -re -f h264 -i - -vcodec copy -f flv rtmp://15.156.160.96/live/eric'
-                streamingProcess = subprocess.Popen(ffmpeg_cmd, shell=True, stdin=subprocess.PIPE, start_new_session=True)
-                
-                # streamingProcess.communicate()
+        websocket = await websockets.connect(WS_URL, additional_headers=headers)
+        print("Connected to the server.")
+        
+        # Identify itself to the server
+        identifier = {
+            "id": 1,
+            "name": "First cam",
+            "connected": True,
+            "streaming": False,
+            "liveStreamURL": "http://url.com"
+        }
+        await websocket.send(json.dumps(identifier))
+        print("Send ID to server")
+        return websocket
+
+    except (websockets.ConnectionClosed, ConnectionRefusedError) as e:
+        print(f"Connection error: {e}. Retrying in 5 seconds...")
+        return None
+    
+    except Exception as e:
+        print(f"Unexpected websocket error: {e}")
+        return None
+            
+            
+async def handle_server_messages(websocket: websockets.ClientConnection, token):
+    """Handle incoming messages from the server."""
+    global streaming_process
+    
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+
+    async for message in websocket:
+        try:
+            data = json.loads(message)
+            action = data.get("action")
+            #payload = data.get("payload")
+
+            if action == "start":
+                if streaming_process is None:
+                    print("Starting video stream...")
+                    streaming_process = subprocess.Popen(
+                        CAMERA_COMMAND, shell=True, stdin=subprocess.PIPE, start_new_session=True
+                    )
+                    requests.put(f"{BASE_URL}/api/cameras/1", json={"streaming": True}, headers=headers)
+                else:
+                    print("Streaming is already active.")
+            elif action == "stop":
+                if streaming_process is not None:
+                    print("Stopping video stream...")
+                    os.killpg(os.getpgid(streaming_process.pid), signal.SIGTERM)
+                    streaming_process = None
+                    print(f"Streaming process: {streaming_process}")
+                    requests.put(f"{BASE_URL}/api/cameras/1", json={"streaming": False}, headers=headers)
+                else:
+                    print("No active streaming process to stop.")
+                    
             else:
-                print("Camera is already streaming")
-            
-        else:
-            self.stopCamera()
+                print(f"Unknown action: {action}")
+        except json.JSONDecodeError:
+            print("Failed to decode server message.")
+        except Exception as e:
+            print(f"Error handling server message: {e}")
+
+
+async def main():
+    
+    global streaming_process
+    
+    while True:
+        token = authenticate()
+        if not token:
+            print("Failed to obtain a token. Retrying in 10 seconds...")
+            await asyncio.sleep(5)
+            continue
         
-    def stopCamera(self):
+        websocket = await connect_to_server(token)
+
+        if not websocket:
+            await asyncio.sleep(5)
+            continue
         
-        global streamingProcess
-        print(f'stopCamera() was called. Current PID of streamingProcess is {streamingProcess.pid}')
-        if streamingProcess is not None:
-            print("Stopping the camera")
-            os.killpg(os.getpgid(streamingProcess.pid), signal.SIGTERM)
-            streamingProcess = None
-        else:
-            print("No streaming process is active")
+        try:
+            await handle_server_messages(websocket, token)
         
-    def decode_message(self, payload):
-        print("Got a message, must decode {0}".format(payload))
-        json_message = json.loads(payload)
-        action = json_message.get('action')
-        payloadValue = json_message.get('payload')
+        except websockets.ConnectionClosed as cc:
+            print(f"Websocket connection closed: {cc}")
         
-        if action == 'stream':
-            self.showCamera(payloadValue)
-
-class AppProtocol(WebSocketClientProtocol):
-
-    def onConnect(self, response):
-        print("Connected to the server")
-        self.factory.resetDelay()
-
-    def onOpen(self):
-        print("Connection is open.")
-
-        # when connection is open we send a test message the the server.
-
-        def hello_server():
+        except ConnectionRefusedError as cr:
+            print(f"Websocket connection refused error: {cr}")
             
-            message = {
-                "action": "pi_online",
-                "payload": {
-                    "id": "RPi-1",
-                    "key": "secret"
-                }
-            }
+        except Exception as e:
+            print(f"Unexpected error: {e}")
             
-            self.sendMessage(json.dumps(message).encode('UTF-8'))
-            
-            # self.sendMessage(u"Hello server i'm Raspberry PI".encode('utf8'))
-            # self.factory.reactor.callLater(1, hello_server)
-        hello_server()
-
-    def onMessage(self, payload, isBinary):
-        if (isBinary):
-            print("Got Binary message {0} bytes".format(len(payload)))
-        else:
-            print("Got Text message from the server {0}".format(payload.decode('utf8')))
-            
-            #Decode the message
-            app = App()
-            app.decode_message(payload)
-
-    def onClose(self, wasClean, code, reason):
-        print("Connect closed {0}".format(reason))
-
-
-class AppFactory(WebSocketClientFactory, ReconnectingClientFactory):
-    protocol = AppProtocol
-
-    def clientConnectionFailed(self, connector, reason):
-        print("Unable connect to the server {0}".format(reason))
-        self.retry(connector)
-
-    def clientConnectionLost(self, connector, reason):
-        print("Lost connection and retrying... {0}".format(reason))
-        self.retry(connector)
-
-
-if __name__ == '__main__':
-    import sys
-    from twisted.python import log
-    from twisted.internet import reactor
-
-
-    log.startLogging(sys.stdout)
-    factory = AppFactory(u"ws://15.156.160.96:8080")
-    reactor.connectTCP(server, port, factory)
-    reactor.run()
-
+        if streaming_process:
+            print("Stopping streaming process due to connection loss...")
+            os.killpg(os.getpgid(streaming_process.pid), signal.SIGTERM)
+            streaming_process = None
+        
+        await asyncio.sleep(5)
+        
+if __name__ == "__main__":
+    
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Keyboard interrupt received, shutting down...")
